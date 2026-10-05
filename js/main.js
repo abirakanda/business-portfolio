@@ -34,7 +34,7 @@ function renderAll(d) {
   renderBusiness(d.business);
   renderResume(d.experience, d.achievements, d.profile);
   renderGallery(d.gallery);
-  renderContact(d.profile, d.social);
+  renderContact(d.profile);
   renderFooter(d.profile, d.social);
 }
 
@@ -260,11 +260,10 @@ function renderGallery(gallery) {
   attachGalleryClicks();
 }
 
-function renderContact(profile, social) {
+function renderContact(profile) {
   setText('contact-email', profile.email);
   setText('contact-phone', profile.phone);
   setText('contact-location', profile.location);
-  renderSocialLinks('social-links', social);
 }
 
 function renderFooter(profile, social) {
@@ -314,6 +313,8 @@ function initCursor() {
   const dot = document.getElementById('cursor-dot');
   const outline = document.getElementById('cursor-outline');
   if (!dot || !outline) return;
+  // Touch devices: no custom cursor (CSS hides the elements too)
+  if (window.matchMedia('(hover: none), (pointer: coarse)').matches) return;
 
   let mouseX = 0, mouseY = 0, outX = 0, outY = 0;
 
@@ -322,7 +323,12 @@ function initCursor() {
     mouseY = e.clientY;
     dot.style.left = mouseX + 'px';
     dot.style.top  = mouseY + 'px';
+    if (!document.body.classList.contains('cursor-ready')) {
+      outX = mouseX; outY = mouseY;
+      document.body.classList.add('cursor-ready');
+    }
   });
+  document.documentElement.addEventListener('mouseleave', () => document.body.classList.remove('cursor-ready'));
 
   (function animateCursor() {
     outX += (mouseX - outX) * 0.12;
@@ -342,6 +348,7 @@ function initScrollProgress() {
   const bar = document.getElementById('scroll-progress');
   if (!bar) return;
   window.addEventListener('scroll', () => {
+    if (isNavLocked()) return;
     const pct = (window.scrollY / (document.body.scrollHeight - window.innerHeight)) * 100;
     bar.style.width = pct + '%';
   }, { passive: true });
@@ -351,23 +358,115 @@ function initNav() {
   const nav = document.getElementById('navbar');
   const toggle = document.getElementById('nav-toggle');
   const menu = document.getElementById('nav-menu');
-  const links = document.querySelectorAll('.nav-link');
+  const links = Array.from(menu ? menu.querySelectorAll('.nav-link') : []);
 
   window.addEventListener('scroll', () => {
+    if (isNavLocked()) return; // body is position:fixed while the menu is open
     if (nav) nav.classList.toggle('scrolled', window.scrollY > 50);
     updateActiveNav();
   }, { passive: true });
 
-  if (toggle && menu) {
-    toggle.addEventListener('click', () => {
-      menu.classList.toggle('open');
-      const spans = toggle.querySelectorAll('span');
-      spans[0].style.transform = menu.classList.contains('open') ? 'rotate(45deg) translate(5px,5px)' : '';
-      spans[1].style.opacity   = menu.classList.contains('open') ? '0' : '';
-      spans[2].style.transform = menu.classList.contains('open') ? 'rotate(-45deg) translate(5px,-5px)' : '';
-    });
-    links.forEach(l => l.addEventListener('click', () => menu.classList.remove('open')));
+  if (!toggle || !menu) return;
+
+  const mobileMQ = window.matchMedia('(max-width: 768px)');
+  const body = document.body;
+  let lockedY = 0;
+  let inerted = [];
+
+  toggle.setAttribute('aria-controls', menu.id);
+  toggle.setAttribute('aria-expanded', 'false');
+
+  const isOpen = () => menu.classList.contains('open');
+
+  function lockScroll() {
+    lockedY = window.scrollY;
+    body.classList.add('nav-locked');
+    // position:fixed is the only reliable scroll lock on iOS Safari
+    Object.assign(body.style, { position: 'fixed', top: `-${lockedY}px`, left: '0', right: '0', width: '100%' });
   }
+
+  function unlockScroll() {
+    if (!body.classList.contains('nav-locked')) return;
+    Object.assign(body.style, { position: '', top: '', left: '', right: '', width: '' });
+    const html = document.documentElement;
+    const prev = html.style.scrollBehavior;
+    html.style.scrollBehavior = 'auto'; // restore instantly, not with smooth scroll
+    window.scrollTo(0, lockedY);
+    html.style.scrollBehavior = prev;
+    body.classList.remove('nav-locked');
+  }
+
+  // Keep keyboard/AT focus out of the page behind the open menu
+  function setBackgroundInert(on) {
+    if (on) {
+      inerted = Array.from(body.children).filter(el => el !== nav && !el.inert && el.tagName !== 'SCRIPT');
+      inerted.forEach(el => { el.inert = true; });
+    } else {
+      inerted.forEach(el => { el.inert = false; });
+      inerted = [];
+    }
+  }
+
+  function openMenu(fromKeyboard) {
+    menu.classList.add('open');
+    nav.classList.add('menu-open');
+    toggle.setAttribute('aria-expanded', 'true');
+    lockScroll();
+    setBackgroundInert(true);
+    if (fromKeyboard && links[0]) links[0].focus({ preventScroll: true });
+  }
+
+  function closeMenu({ restoreFocus = false } = {}) {
+    if (!isOpen() && !body.classList.contains('nav-locked')) return;
+    menu.classList.remove('open');
+    nav.classList.remove('menu-open');
+    toggle.setAttribute('aria-expanded', 'false');
+    setBackgroundInert(false);
+    unlockScroll();
+    if (nav) nav.classList.toggle('scrolled', window.scrollY > 50);
+    if (restoreFocus) toggle.focus({ preventScroll: true });
+  }
+
+  // detail === 0 means the click came from the keyboard (Enter/Space)
+  toggle.addEventListener('click', e => {
+    if (isOpen()) closeMenu({ restoreFocus: true });
+    else openMenu(e.detail === 0);
+  });
+
+  // Selecting a link closes the menu; the anchor then scrolls from the restored position
+  links.forEach(l => l.addEventListener('click', () => closeMenu()));
+
+  // Tap outside closes the menu and is swallowed so it doesn't activate what's underneath
+  document.addEventListener('click', e => {
+    if (!isOpen() || menu.contains(e.target) || toggle.contains(e.target)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    closeMenu();
+  }, true);
+
+  document.addEventListener('keydown', e => {
+    if (!isOpen()) return;
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      closeMenu({ restoreFocus: true });
+    } else if (e.key === 'Tab') {
+      // Cycle focus between the toggle and the menu links
+      const items = [toggle, ...links];
+      const i = items.indexOf(document.activeElement);
+      const next = e.shiftKey ? (i <= 0 ? items.length - 1 : i - 1) : (i + 1) % items.length;
+      e.preventDefault();
+      items[next].focus();
+    }
+  });
+
+  // Moving to desktop width: drop the mobile menu state and any scroll lock
+  const onBreakpoint = () => { if (!mobileMQ.matches) closeMenu(); };
+  if (mobileMQ.addEventListener) mobileMQ.addEventListener('change', onBreakpoint);
+  else mobileMQ.addListener(onBreakpoint);
+}
+
+function isNavLocked() {
+  return document.body.classList.contains('nav-locked');
 }
 
 function updateActiveNav() {
@@ -648,6 +747,7 @@ function initBackToTop() {
   const btn = document.getElementById('back-to-top');
   if (!btn) return;
   window.addEventListener('scroll', () => {
+    if (isNavLocked()) return;
     btn.classList.toggle('show', window.scrollY > 400);
   }, { passive: true });
   btn.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));

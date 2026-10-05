@@ -48,6 +48,7 @@ svg{flex-shrink:0}
   --shadow-lg:  0 8px 56px rgba(0,0,0,0.6);
   --glow:       0 0 40px rgba(124,58,237,0.3);
   --t:          0.3s cubic-bezier(.4,0,.2,1);
+  --nav-h:      70px;
 }
 
 /* ---------- Scrollbar ---------- */
@@ -66,6 +67,8 @@ svg{flex-shrink:0}
   border-radius:50%;pointer-events:none;z-index:9998;
   transform:translate(-50%,-50%);transition:transform .15s ease,width .2s,height .2s,border-color .2s;
 }
+.cursor-dot,.cursor-outline{visibility:hidden}
+body.cursor-ready .cursor-dot,body.cursor-ready .cursor-outline{visibility:visible}
 .cursor-dot.active{transform:translate(-50%,-50%) scale(0.4)}
 .cursor-outline.active{width:56px;height:56px;border-color:var(--gold);opacity:.6}
 
@@ -95,7 +98,7 @@ svg{flex-shrink:0}
 /* ---------- Navigation ---------- */
 .navbar{
   position:fixed;top:0;left:0;right:0;z-index:999;
-  padding:0 2rem;height:70px;
+  padding:0 2rem;height:var(--nav-h);
   display:flex;align-items:center;
   transition:var(--t);
 }
@@ -133,6 +136,9 @@ svg{flex-shrink:0}
 .admin-link::after{display:none!important}
 .nav-toggle{display:none;flex-direction:column;gap:5px;cursor:none}
 .nav-toggle span{display:block;width:24px;height:2px;background:var(--text2);border-radius:99px;transition:var(--t)}
+.nav-toggle[aria-expanded="true"] span:nth-child(1){transform:rotate(45deg) translate(5px,5px)}
+.nav-toggle[aria-expanded="true"] span:nth-child(2){opacity:0}
+.nav-toggle[aria-expanded="true"] span:nth-child(3){transform:rotate(-45deg) translate(5px,-5px)}
 
 /* ---------- Buttons ---------- */
 .btn{
@@ -159,7 +165,7 @@ svg{flex-shrink:0}
 .btn-danger:hover{background:var(--danger);color:#fff}
 
 /* ---------- Section Commons ---------- */
-.section{padding:110px 0}
+.section{padding:110px 0;overflow-x:clip}
 .container{max-width:1200px;margin:0 auto;padding:0 2rem}
 .section-header{text-align:center;margin-bottom:60px}
 .section-tag{
@@ -189,8 +195,9 @@ svg{flex-shrink:0}
 
 /* ---------- Hero ---------- */
 .hero{
-  position:relative;min-height:100vh;display:flex;align-items:center;
+  position:relative;min-height:100vh;min-height:100svh;display:flex;align-items:center;
   justify-content:center;overflow:hidden;
+  padding:calc(var(--nav-h) + 2.5rem + env(safe-area-inset-top,0px)) 0 calc(6rem + env(safe-area-inset-bottom,0px));
 }
 #particles-canvas{position:absolute;inset:0;z-index:0}
 .aurora{position:absolute;inset:0;z-index:0;overflow:hidden}
@@ -198,9 +205,9 @@ svg{flex-shrink:0}
   position:absolute;border-radius:50%;filter:blur(80px);opacity:.15;
   animation:aurora 12s ease-in-out infinite;
 }
-.aurora-1{width:600px;height:600px;background:var(--primary);top:-150px;left:-100px}
-.aurora-2{width:500px;height:500px;background:var(--teal);bottom:-100px;right:-100px;animation-delay:-4s}
-.aurora-3{width:400px;height:400px;background:var(--pink);top:30%;left:50%;animation-delay:-8s}
+.aurora-1{width:min(600px,120vw);height:min(600px,120vw);background:var(--primary);top:-150px;left:-100px}
+.aurora-2{width:min(500px,100vw);height:min(500px,100vw);background:var(--teal);bottom:-100px;right:-100px;animation-delay:-4s}
+.aurora-3{width:min(400px,80vw);height:min(400px,80vw);background:var(--pink);top:30%;left:50%;animation-delay:-8s}
 @keyframes aurora{
   0%,100%{transform:scale(1) translate(0,0)}
   33%{transform:scale(1.1) translate(30px,-30px)}
@@ -229,12 +236,12 @@ svg{flex-shrink:0}
   -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
 }
 .hero-titles{
-  font-size:clamp(1.1rem,2.5vw,1.6rem);font-weight:500;
-  color:var(--text2);margin-bottom:1.25rem;height:2em;
-  display:flex;align-items:center;justify-content:center;gap:.3rem;
+  font-size:clamp(1.1rem,2.5vw,1.6rem);font-weight:500;line-height:1.5;
+  color:var(--text2);margin-bottom:1.25rem;min-height:1.5em;
+  display:flex;flex-wrap:wrap;align-items:baseline;justify-content:center;gap:0 .3rem;
 }
 .static-text{color:var(--text3)}
-.dynamic-text{color:var(--primary-l);font-weight:600}
+.dynamic-text{color:var(--primary-l);font-weight:600;overflow-wrap:anywhere}
 .cursor-blink{color:var(--gold);animation:blink .7s step-end infinite}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
 .hero-desc{color:var(--text3);font-size:1rem;margin-bottom:2.5rem;line-height:1.8}
@@ -496,7 +503,7 @@ svg{flex-shrink:0}
 }
 .biz-stat-label{font-size:.78rem;color:var(--text3)}
 .services-grid{
-  display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:1rem
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(min(280px,100%),1fr));gap:1rem
 }
 .service-card{
   background:var(--card);border:1px solid var(--border);border-radius:var(--radius);
@@ -706,8 +713,8 @@ svg{flex-shrink:0}
 
 /* ---------- Section Numbers ---------- */
 .section-number{
-  position:absolute;right:2rem;top:50%;transform:translateY(-50%);
-  font-family:'Space Grotesk',sans-serif;font-size:8rem;font-weight:900;
+  position:absolute;right:clamp(.75rem,4vw,2rem);top:50%;transform:translateY(-50%);
+  font-family:'Space Grotesk',sans-serif;font-size:clamp(4rem,16vw,8rem);font-weight:900;
   color:rgba(255,255,255,.02);pointer-events:none;line-height:1;
   user-select:none;
 }
@@ -744,15 +751,39 @@ svg{flex-shrink:0}
 }
 @media(max-width:768px){
   .section{padding:80px 0}
-  .nav-menu{
-    position:fixed;top:70px;left:0;right:0;
-    background:rgba(3,7,18,.97);backdrop-filter:blur(20px);
-    flex-direction:column;padding:1.5rem;gap:.5rem;
-    transform:translateY(-110%);transition:transform .35s ease;
-    border-bottom:1px solid var(--border);
+  .navbar{
+    padding:0 1.25rem;
+    background:rgba(3,7,18,.72);backdrop-filter:blur(14px);
+    -webkit-backdrop-filter:blur(14px);border-bottom:1px solid var(--border);
   }
-  .nav-menu.open{transform:translateY(0)}
-  .nav-toggle{display:flex}
+  .navbar.menu-open{background:rgba(3,7,18,.97)}
+  /* Closed: fully clipped, hidden from focus/AT, and non-interactive */
+  .nav-menu{
+    position:fixed;top:var(--nav-h);left:0;right:0;
+    max-height:calc(100vh - var(--nav-h));max-height:calc(100dvh - var(--nav-h));
+    overflow-y:auto;overscroll-behavior:contain;
+    /* opaque: a translucent panel nested in the navbar's backdrop-filter lets page text bleed through */
+    background:var(--bg);
+    flex-direction:column;align-items:stretch;padding:1rem 1.5rem 1.5rem;gap:.25rem;
+    border-bottom:1px solid var(--border);
+    clip-path:inset(0 0 100% 0);transform:translateY(-8px);opacity:0;
+    visibility:hidden;pointer-events:none;
+    transition:clip-path .35s ease,transform .35s ease,opacity .25s ease,visibility 0s linear .35s;
+  }
+  .nav-menu.open{
+    clip-path:inset(0 0 0 0);transform:none;opacity:1;
+    visibility:visible;pointer-events:auto;
+    transition:clip-path .35s ease,transform .35s ease,opacity .25s ease,visibility 0s;
+  }
+  /* transition:all would also animate the inherited visibility and keep links focusable after close */
+  .nav-menu .nav-link{display:block;padding:.75rem 1rem;transition:color .3s ease}
+  .nav-menu .nav-link::after{left:1rem;right:auto;width:0;transition:width .3s ease}
+  .nav-menu .nav-link:hover::after,.nav-menu .nav-link.active::after{right:auto;width:2rem}
+  .nav-toggle{display:flex;justify-content:center;align-items:center;width:44px;height:44px;margin-right:-10px}
+  .nav-toggle span{background:var(--text)}
+  .hero{padding-bottom:calc(3rem + env(safe-area-inset-bottom,0px))}
+  .hero-scroll{display:none}
+  .business-hero{padding:1.5rem}
   .hero-actions{flex-direction:column;align-items:center}
   .hero-stats{gap:1.5rem}
   .about-info-grid{grid-template-columns:1fr}
@@ -761,8 +792,21 @@ svg{flex-shrink:0}
   .footer-content{grid-template-columns:1fr}
   .footer-bottom{flex-direction:column;align-items:center;text-align:center}
 }
+@media(max-height:700px){
+  .hero-scroll{display:none}
+  .hero{padding-bottom:calc(3rem + env(safe-area-inset-bottom,0px))}
+}
 @media(max-width:480px){
   .container{padding:0 1rem}
+  .hero-content{padding:0 1rem}
   .hero-stats{gap:1rem}
   .stat-divider{display:none}
+}
+@media(hover:none),(pointer:coarse){
+  .cursor-dot,.cursor-outline{display:none!important}
+  body{cursor:auto}
+  button,.nav-toggle,.gallery-item,.nav-dot{cursor:pointer}
+}
+@media(prefers-reduced-motion:reduce){
+  .nav-menu,.nav-menu.open{transition:none}
 }
