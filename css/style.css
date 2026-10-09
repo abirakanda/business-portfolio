@@ -126,6 +126,17 @@ body.cursor-ready .cursor-outline{visibility:visible}
   font-family:var(--display);font-size:1.15rem;font-weight:600;letter-spacing:-.02em;color:var(--text);
 }
 .logo-text .accent{color:var(--gold)}
+/* Navbar brand: </> mark (brackets off-white, slash gold) */
+.nav-brand{
+  display:inline-flex;align-items:center;justify-content:center;
+  min-width:44px;min-height:44px;padding:0 4px;margin-left:-4px;border-radius:12px;
+}
+.nav-brand-mark{width:40px;height:auto;display:block;overflow:visible;shape-rendering:geometricPrecision}
+.nav-brand-bracket{stroke:var(--text);transition:stroke var(--t)}
+.nav-brand-slash{stroke:var(--gold);transition:stroke var(--t)}
+.nav-brand:hover .nav-brand-bracket,.nav-brand:focus-visible .nav-brand-bracket{stroke:var(--gold-l)}
+.nav-brand:hover .nav-brand-mark{filter:drop-shadow(0 0 6px rgba(197,166,101,.28))}
+@media(max-width:768px){.nav-brand-mark{width:32px}}
 .nav-menu{
   grid-column:2;display:flex;align-items:center;gap:2px;
   padding:5px;border-radius:var(--radius-full);
