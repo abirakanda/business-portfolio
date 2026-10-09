@@ -478,6 +478,7 @@ function renderSkillsTab(el) {
     </div>
     <div class="dash-card">
       <div class="dash-card-body">
+        <p style="color:var(--text3);font-size:.82rem;margin:0">Skills and technologies appear together on the site as logo tiles, grouped into Frontend, Backend &amp; Data, Development Tools, and Design &amp; CMS. Duplicates are shown once; names without a known logo appear under their skill category or “More Technologies”.</p>
         <div id="tech-tags-list" class="tech-tags-admin">
           ${d.technologies.map(t => `
             <div class="tech-tag-adm">
@@ -511,10 +512,10 @@ function renderSkillsTab(el) {
               </div>
               <div class="adm-form-group">
                 <label>Category</label>
-                <input name="category" placeholder="e.g. Frontend">
+                <input name="category" placeholder="e.g. Frontend, Backend, Tools, Design">
               </div>
               <div class="adm-form-group adm-form-full">
-                <label>Proficiency Level: <span id="skill-level-display">80</span>%</label>
+                <label>Proficiency Level: <span id="skill-level-display">80</span>% <span style="color:var(--text3);font-weight:400">(private — not shown on the site)</span></label>
                 <div class="range-wrap" style="margin-top:.5rem">
                   <input type="range" name="level" min="1" max="100" value="80"
                     oninput="document.getElementById('skill-level-display').textContent=this.value">
@@ -987,16 +988,122 @@ window.deleteExpItem = function(type, id) {
 };
 
 /* ============================================================
-   GALLERY
+   GALLERY — albums, categories, photos
+   Photo records in `gallery` keep their original src/title/description;
+   grouping lives in `galleryMeta` (see Gallery in data.js).
    ============================================================ */
+const GA = { filter: 'all', selected: new Set() };
+
+function gaView() { return Gallery.build(DB.get()); }
+
+/* Every structural change goes through here. The first save of galleryMeta is a
+   persistent migration, so a full backup is downloaded before it runs. */
+function gaCommit(mutate, msg = 'Saved!') {
+  const run = () => {
+    try {
+      const d = DB.get();
+      Gallery.migrate(d); // idempotent: adds missing ids, normalises galleryMeta
+      mutate(d, d.galleryMeta);
+      DB.save(d);
+      toast(msg);
+    } catch (err) {
+      console.error(err);
+      toast('Could not save: ' + err.message, 'error');
+    }
+    renderGalleryTab(document.getElementById('adm-content'));
+  };
+  if (Gallery.hasMeta(DB.get())) { run(); return; }
+  confirm(
+    'This is the first save of the album structure. A backup of all your current portfolio data will download first, then the albums are saved. Your photos and captions are not changed.',
+    () => { gaDownloadBackup('before-gallery-albums'); run(); },
+    { title: 'Save album structure', icon: '🗂️', okLabel: 'Download backup & save', okClass: 'adm-btn-primary' }
+  );
+}
+
+function gaDownloadBackup(tag) {
+  const json = JSON.stringify(DB.get(), null, 2);
+  const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `portfolio_backup_${tag}_${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function gaRec(d, id) { return (d.gallery || []).find(r => r && r.id === id); }
+function gaAlbum(meta, id) { return meta.albums.find(a => a.id === id); }
+function gaAlbumOf(view, photoId) { return view.albums.find(a => a.photoIds.includes(photoId)); }
+function gaRemoveFromAlbums(meta, ids) {
+  meta.albums.forEach(a => {
+    a.photoIds = (a.photoIds || []).filter(id => !ids.includes(id));
+    if (ids.includes(a.coverId)) a.coverId = a.photoIds[0] || '';
+  });
+}
+function gaUniqueId(base, taken) {
+  let id = Gallery.slug(base) || 'album', n = 2;
+  const root = id;
+  while (taken.includes(id) || id === '_more') id = `${root}-${n++}`;
+  return id;
+}
+function gaThumb(p) { return esc(Gallery.sized(p, 320)); }
+function gaAlbumOptions(view, selected, { none = 'Unassigned (no album)' } = {}) {
+  return `<option value="">${esc(none)}</option>` + view.albums.map(a =>
+    `<option value="${esc(a.id)}" ${a.id === selected ? 'selected' : ''}>${esc(a.title)}</option>`).join('');
+}
+function gaCategoryOptions(view, selected) {
+  return `<option value="">No category (shows under All only)</option>` + view.categories.map(c =>
+    `<option value="${esc(c.id)}" ${c.id === selected ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
+}
+
 function renderGalleryTab(el) {
   setTopbarTitle('Gallery');
-  const d = DB.get();
+  if (!el) return;
+  const view = gaView();
+  const catName = id => (view.categories.find(c => c.id === id) || {}).name;
+  if (GA.filter !== 'all' && GA.filter !== '_unassigned' && GA.filter !== '_review' && !view.albums.some(a => a.id === GA.filter)) GA.filter = 'all';
+  GA.selected.forEach(id => { if (!view.byId[id]) GA.selected.delete(id); });
+
+  let shown;
+  if (GA.filter === 'all') shown = view.photos.map(p => p.id);
+  else if (GA.filter === '_unassigned') shown = view.unassigned.slice();
+  else if (GA.filter === '_review') shown = view.photos.filter(p => view.review.has(p.id)).map(p => p.id);
+  else shown = gaAlbum(view, GA.filter).photoIds.slice();
+  const inAlbum = !['all', '_unassigned', '_review'].includes(GA.filter);
+
   el.innerHTML = `
-    <div class="section-h"><h2>Gallery</h2></div>
+    <div class="section-h"><h2>Gallery</h2>
+      <div class="ga-head-actions">
+        <button class="adm-btn adm-btn-secondary" data-act="categories">Categories</button>
+        <button class="adm-btn adm-btn-primary" data-act="new-album">+ New Album</button>
+      </div>
+    </div>
+
+    ${view.draft ? `
+      <div class="ga-notice">
+        <div>
+          <strong>Proposed album structure — not saved yet.</strong>
+          <p>Photos are grouped by matching their existing captions. Review it below; the first change you save stores it (a backup of your data downloads first). Nothing has been written yet.</p>
+        </div>
+        <button class="adm-btn adm-btn-primary" data-act="save-structure">Save structure</button>
+      </div>` : ''}
+
+    ${view.review.size ? `
+      <div class="ga-notice ga-notice-review">
+        <div>
+          <strong>${view.review.size} photo${view.review.size === 1 ? '' : 's'} need${view.review.size === 1 ? 's' : ''} your classification review.</strong>
+          <p>These were not confidently matched to an album. Check them, move them if needed, then mark them reviewed.</p>
+        </div>
+        <button class="adm-btn adm-btn-secondary" data-act="show-review">Show them</button>
+      </div>` : ''}
+
     <div class="dash-card">
+      <div class="dash-card-header"><h3>Upload photos</h3></div>
       <div class="dash-card-body">
-        <div class="gallery-upload-area" id="upload-area">
+        <div class="adm-form-group" style="max-width:360px">
+          <label for="ga-upload-album">Upload into album</label>
+          <select id="ga-upload-album">${gaAlbumOptions(view, inAlbum ? GA.filter : '')}</select>
+        </div>
+        <div class="gallery-upload-area" id="upload-area" tabindex="0" role="button" aria-label="Upload photos">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
           <p><strong>Click to upload</strong> or drag & drop images</p>
           <p style="font-size:.78rem;margin-top:.3rem">PNG, JPG, WEBP supported</p>
@@ -1004,32 +1111,434 @@ function renderGalleryTab(el) {
         </div>
       </div>
     </div>
-    <div class="gallery-admin-grid" id="gallery-admin-grid">
-      ${(d.gallery || []).map((img, i) => `
-        <div class="gallery-admin-item">
-          <img src="${img.src}" alt="${esc(img.title || img.caption || '')}">
-          <div class="gallery-admin-overlay">
-            <div class="gallery-admin-caption">${esc(img.title || img.caption || 'No title')}</div>
-            ${img.description ? `<div class="gallery-admin-caption" style="font-size:.68rem;opacity:.8">${esc(img.description)}</div>` : ''}
-            <div style="display:flex;gap:.4rem;margin-top:.4rem">
-              <button class="adm-btn" style="font-size:.72rem;padding:.25rem .5rem" onclick="editGalleryItem(${i})">Edit</button>
-              <button class="adm-btn adm-btn-danger" style="font-size:.72rem;padding:.25rem .5rem" onclick="deleteGalleryItem(${i})">Delete</button>
-            </div>
-          </div>
-          ${img.title ? `<div class="gallery-admin-title">${esc(img.title)}</div>` : ''}
+
+    <div class="dash-card">
+      <div class="dash-card-header"><h3>Albums <span class="ga-muted">(${view.albums.length}) — order here is the order on the website</span></h3></div>
+      <div class="dash-card-body">
+        <div class="ga-album-list">
+          ${view.albums.map((a, i) => {
+            const cover = view.byId[a.coverId];
+            return `
+            <div class="ga-album-row">
+              <div class="ga-album-cover">${cover ? `<img src="${gaThumb(cover)}" alt="" loading="lazy" style="object-position:${a.focus.x}% ${a.focus.y}%">` : '<span>No cover</span>'}</div>
+              <div class="ga-album-info">
+                <div class="ga-album-name">${esc(a.title)}</div>
+                <div class="ga-muted">${a.categoryId ? esc(catName(a.categoryId)) : '<span class="ga-warn">No category</span>'} · ${a.photoIds.length} photo${a.photoIds.length === 1 ? '' : 's'}${a.photoIds.length ? '' : ' (hidden on site until it has photos)'}${a.location ? ' · ' + esc(a.location) : ''}${a.date ? ' · ' + esc(a.date) : ''}</div>
+              </div>
+              <div class="ga-row-actions">
+                <button class="adm-btn adm-btn-secondary ga-icon-btn" data-act="album-up" data-id="${esc(a.id)}" ${i === 0 ? 'disabled' : ''} aria-label="Move ${esc(a.title)} up">↑</button>
+                <button class="adm-btn adm-btn-secondary ga-icon-btn" data-act="album-down" data-id="${esc(a.id)}" ${i === view.albums.length - 1 ? 'disabled' : ''} aria-label="Move ${esc(a.title)} down">↓</button>
+                <button class="adm-btn adm-btn-secondary" data-act="album-photos" data-id="${esc(a.id)}">Photos</button>
+                <button class="adm-btn adm-btn-secondary" data-act="album-edit" data-id="${esc(a.id)}">Edit</button>
+                <button class="adm-btn adm-btn-danger" data-act="album-delete" data-id="${esc(a.id)}">Delete</button>
+              </div>
+            </div>`;
+          }).join('') || '<p class="ga-muted">No albums yet.</p>'}
+          ${view.unassigned.length ? `<p class="ga-muted" style="margin-top:.75rem">${view.unassigned.length} photo${view.unassigned.length === 1 ? ' is' : 's are'} not in any album — shown on the site as “More Photos” under All.</p>` : ''}
         </div>
-      `).join('') || ''}
+      </div>
     </div>
-    ${!d.gallery?.length ? '<p style="color:var(--text3);text-align:center;margin-top:1rem">No images yet. Upload some above.</p>' : ''}
+
+    <div class="dash-card">
+      <div class="dash-card-header ga-photos-head">
+        <h3>Photos</h3>
+        <select id="ga-filter" aria-label="Show photos">
+          <option value="all" ${GA.filter === 'all' ? 'selected' : ''}>All photos (${view.photos.length})</option>
+          <option value="_review" ${GA.filter === '_review' ? 'selected' : ''}>Needs review (${view.review.size})</option>
+          <option value="_unassigned" ${GA.filter === '_unassigned' ? 'selected' : ''}>Not in an album (${view.unassigned.length})</option>
+          ${view.albums.map(a => `<option value="${esc(a.id)}" ${GA.filter === a.id ? 'selected' : ''}>Album: ${esc(a.title)} (${a.photoIds.length})</option>`).join('')}
+        </select>
+      </div>
+      <div class="dash-card-body">
+        <div class="ga-bulk">
+          <label class="ga-check"><input type="checkbox" id="ga-select-all" ${shown.length && shown.every(id => GA.selected.has(id)) ? 'checked' : ''}> Select all shown</label>
+          <span class="ga-muted" id="ga-sel-count">${GA.selected.size} selected</span>
+          <select id="ga-bulk-album" aria-label="Move selected photos to album">${gaAlbumOptions(view, '', { none: '— remove from album —' })}</select>
+          <button class="adm-btn adm-btn-secondary" data-act="bulk-move">Move selected</button>
+          <button class="adm-btn adm-btn-secondary" data-act="bulk-reviewed">Mark reviewed</button>
+          <button class="adm-btn adm-btn-secondary" data-act="bulk-flag">Flag for review</button>
+        </div>
+        ${inAlbum ? '<p class="ga-muted" style="margin:.25rem 0 .75rem">Use ← → to set the order photos appear in this album.</p>' : ''}
+        <div class="ga-photo-grid">
+          ${shown.map((id, i) => {
+            const p = view.byId[id];
+            const alb = gaAlbumOf(view, id);
+            return `
+            <div class="ga-photo-card ${GA.selected.has(id) ? 'selected' : ''}">
+              <label class="ga-photo-thumb">
+                <input type="checkbox" class="ga-select" data-id="${esc(id)}" ${GA.selected.has(id) ? 'checked' : ''} aria-label="Select ${esc(Gallery.title(p) || 'photo')}">
+                <img src="${gaThumb(p)}" alt="" loading="lazy" onerror="this.onerror=null;this.src='${esc(p.src)}'">
+                ${view.review.has(id) ? '<span class="ga-badge">Review</span>' : ''}
+              </label>
+              <div class="ga-photo-meta">
+                <div class="ga-photo-title" title="${esc(Gallery.title(p))}">${esc(Gallery.title(p) || 'Untitled')}</div>
+                <div class="ga-muted">${alb ? esc(alb.title) : '<span class="ga-warn">No album</span>'}</div>
+              </div>
+              <div class="ga-photo-actions">
+                ${inAlbum ? `
+                  <button class="adm-btn adm-btn-secondary ga-icon-btn" data-act="photo-left" data-id="${esc(id)}" ${i === 0 ? 'disabled' : ''} aria-label="Move earlier">←</button>
+                  <button class="adm-btn adm-btn-secondary ga-icon-btn" data-act="photo-right" data-id="${esc(id)}" ${i === shown.length - 1 ? 'disabled' : ''} aria-label="Move later">→</button>` : ''}
+                <button class="adm-btn adm-btn-secondary" data-act="photo-edit" data-id="${esc(id)}">Edit</button>
+                <button class="adm-btn adm-btn-danger" data-act="photo-delete" data-id="${esc(id)}">Delete</button>
+              </div>
+            </div>`;
+          }).join('') || '<p class="ga-muted">No photos here.</p>'}
+        </div>
+      </div>
+    </div>
   `;
 
   const area  = document.getElementById('upload-area');
   const input = document.getElementById('gallery-upload');
+  const albumSel = () => document.getElementById('ga-upload-album').value;
   area.addEventListener('click',  () => input.click());
+  area.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); input.click(); } });
   area.addEventListener('dragover',  e => { e.preventDefault(); area.classList.add('drag-over'); });
   area.addEventListener('dragleave', () => area.classList.remove('drag-over'));
-  area.addEventListener('drop', e => { e.preventDefault(); area.classList.remove('drag-over'); handleGalleryFiles(e.dataTransfer.files); });
-  input.addEventListener('change', e => handleGalleryFiles(e.target.files));
+  area.addEventListener('drop', e => { e.preventDefault(); area.classList.remove('drag-over'); handleGalleryFiles(e.dataTransfer.files, albumSel()); });
+  input.addEventListener('change', e => handleGalleryFiles(e.target.files, albumSel()));
+
+  document.getElementById('ga-filter').addEventListener('change', e => { GA.filter = e.target.value; renderGalleryTab(el); });
+  document.getElementById('ga-select-all').addEventListener('change', e => {
+    shown.forEach(id => e.target.checked ? GA.selected.add(id) : GA.selected.delete(id));
+    renderGalleryTab(el);
+  });
+  el.querySelectorAll('.ga-select').forEach(cb => cb.addEventListener('change', () => {
+    cb.checked ? GA.selected.add(cb.dataset.id) : GA.selected.delete(cb.dataset.id);
+    cb.closest('.ga-photo-card').classList.toggle('selected', cb.checked);
+    document.getElementById('ga-sel-count').textContent = `${GA.selected.size} selected`;
+  }));
+  el.querySelectorAll('[data-act]').forEach(b => b.addEventListener('click', () => gaAction(b.dataset.act, b.dataset.id, shown)));
+}
+
+function gaAction(act, id, shown) {
+  const el = document.getElementById('adm-content');
+  const swap = (arr, i, j) => { if (i >= 0 && j >= 0 && i < arr.length && j < arr.length) [arr[i], arr[j]] = [arr[j], arr[i]]; };
+  switch (act) {
+    case 'save-structure': gaCommit(() => {}, 'Album structure saved!'); break;
+    case 'show-review': GA.filter = '_review'; renderGalleryTab(el); break;
+    case 'new-album': gaAlbumModal(null); break;
+    case 'categories': gaCategoriesModal(); break;
+    case 'album-edit': gaAlbumModal(id); break;
+    case 'album-photos': GA.filter = id; renderGalleryTab(el); document.getElementById('ga-filter')?.scrollIntoView({ behavior: 'smooth', block: 'center' }); break;
+    case 'album-up':
+    case 'album-down':
+      gaCommit((d, meta) => {
+        const i = meta.albums.findIndex(a => a.id === id);
+        swap(meta.albums, i, act === 'album-up' ? i - 1 : i + 1);
+      }, 'Album order saved');
+      break;
+    case 'album-delete': {
+      const a = gaAlbum(gaView(), id);
+      confirm(`Delete the album “${a.title}”? Its ${a.photoIds.length} photo(s) are NOT deleted — they move to “Not in an album”.`, () => {
+        gaCommit((d, meta) => { meta.albums = meta.albums.filter(x => x.id !== id); }, 'Album deleted (photos kept)');
+      }, { okLabel: 'Delete album' });
+      break;
+    }
+    case 'photo-left':
+    case 'photo-right':
+      gaCommit((d, meta) => {
+        const alb = gaAlbum(meta, GA.filter);
+        const i = alb.photoIds.indexOf(id);
+        swap(alb.photoIds, i, act === 'photo-left' ? i - 1 : i + 1);
+      }, 'Photo order saved');
+      break;
+    case 'photo-edit': gaPhotoModal(id); break;
+    case 'photo-delete': deleteGalleryItem(id); break;
+    case 'bulk-move':
+    case 'bulk-reviewed':
+    case 'bulk-flag': {
+      const ids = Array.from(GA.selected);
+      if (!ids.length) { toast('Select some photos first', 'error'); return; }
+      const target = document.getElementById('ga-bulk-album').value;
+      gaCommit((d, meta) => {
+        if (act === 'bulk-move') {
+          gaRemoveFromAlbums(meta, ids);
+          const alb = target && gaAlbum(meta, target);
+          if (alb) ids.forEach(pid => alb.photoIds.push(pid));
+          if (alb && !alb.coverId) alb.coverId = alb.photoIds[0];
+        } else if (act === 'bulk-reviewed') {
+          meta.review = meta.review.filter(r => !ids.includes(r));
+        } else {
+          meta.review = Array.from(new Set(meta.review.concat(ids)));
+        }
+      }, act === 'bulk-move' ? `${ids.length} photo(s) moved` : 'Review status updated');
+      GA.selected.clear();
+      break;
+    }
+  }
+}
+
+/* ---- Album editor: details, category, cover & focal point ---- */
+function gaAlbumModal(id) {
+  const view = gaView();
+  const a = id ? gaAlbum(view, id) : null;
+  const photos = a ? a.photoIds.map(pid => view.byId[pid]) : [];
+  const modal = document.createElement('div');
+  modal.className = 'adm-modal-overlay open';
+  modal.style.zIndex = '9999';
+  const focus = a ? { ...a.focus } : { x: 50, y: 50 };
+  let coverId = a ? a.coverId : '';
+  modal.innerHTML = `
+    <div class="adm-modal ga-modal-wide" role="dialog" aria-modal="true" aria-labelledby="ga-am-title">
+      <div class="adm-modal-header">
+        <h3 id="ga-am-title">${a ? 'Edit album' : 'New album'}</h3>
+        <button type="button" class="adm-modal-close" data-close aria-label="Close">✕</button>
+      </div>
+      <form class="adm-modal-body" id="ga-album-form">
+        <div class="adm-form-row">
+          <div class="adm-form-group"><label for="ga-a-title">Album title *</label><input id="ga-a-title" required value="${esc(a?.title || '')}"></div>
+          <div class="adm-form-group"><label for="ga-a-cat">Category</label><select id="ga-a-cat">${gaCategoryOptions(view, a?.categoryId || '')}</select></div>
+        </div>
+        <div class="adm-form-group"><label for="ga-a-desc">Description (optional)</label><textarea id="ga-a-desc" rows="2">${esc(a?.description || '')}</textarea></div>
+        <div class="adm-form-row">
+          <div class="adm-form-group"><label for="ga-a-loc">Location (optional, only if known)</label><input id="ga-a-loc" value="${esc(a?.location || '')}"></div>
+          <div class="adm-form-group"><label for="ga-a-date">Date (optional, only if known)</label><input id="ga-a-date" value="${esc(a?.date || '')}" placeholder="e.g. September 2026"></div>
+        </div>
+        ${photos.length ? `
+          <div class="adm-form-group">
+            <label>Cover photo</label>
+            <div class="ga-cover-pick">
+              ${photos.map(p => `
+                <label class="ga-cover-opt"><input type="radio" name="ga-cover" value="${esc(p.id)}" ${p.id === coverId ? 'checked' : ''}>
+                  <img src="${gaThumb(p)}" alt="${esc(Gallery.title(p))}" loading="lazy"></label>`).join('')}
+            </div>
+          </div>
+          <div class="ga-focus-wrap">
+            <div>
+              <label class="ga-label">Focal point — click the preview where the subject is</label>
+              <div class="ga-focus-preview" id="ga-focus-preview"><img id="ga-focus-img" alt=""><span class="ga-focus-dot" id="ga-focus-dot"></span></div>
+            </div>
+            <div class="ga-focus-controls">
+              <div class="adm-form-group"><label for="ga-fx">Horizontal <output id="ga-fx-out"></output></label><input type="range" id="ga-fx" min="0" max="100" value="${focus.x}"></div>
+              <div class="adm-form-group"><label for="ga-fy">Vertical <output id="ga-fy-out"></output></label><input type="range" id="ga-fy" min="0" max="100" value="${focus.y}"></div>
+              <p class="ga-muted">The preview uses the same 4:5 crop as the website card.</p>
+            </div>
+          </div>` : `<p class="ga-muted">Add photos to this album (upload into it, or move photos from the Photos list) to choose a cover.</p>`}
+        <div style="display:flex;gap:.75rem;justify-content:flex-end;margin-top:1.25rem">
+          <button type="button" class="adm-btn adm-btn-secondary" data-close>Cancel</button>
+          <button type="submit" class="adm-btn adm-btn-primary">${a ? 'Save album' : 'Create album'}</button>
+        </div>
+      </form>
+    </div>`;
+  document.body.appendChild(modal);
+  const close = () => modal.remove();
+  modal.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', close));
+  modal.addEventListener('click', e => { if (e.target === modal) close(); });
+  modal.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
+  document.getElementById('ga-a-title').focus();
+
+  const preview = document.getElementById('ga-focus-preview');
+  const sync = () => {
+    if (!preview) return;
+    const p = view.byId[coverId];
+    const img = document.getElementById('ga-focus-img');
+    if (p && img.dataset.src !== p.src) { img.dataset.src = p.src; img.src = Gallery.sized(p, 640); }
+    img.style.objectPosition = `${focus.x}% ${focus.y}%`;
+    document.getElementById('ga-fx').value = focus.x;
+    document.getElementById('ga-fy').value = focus.y;
+    document.getElementById('ga-fx-out').textContent = focus.x + '%';
+    document.getElementById('ga-fy-out').textContent = focus.y + '%';
+    // Place the dot where the focal point lands in the cropped preview
+    const nw = img.naturalWidth, nh = img.naturalHeight, bw = preview.clientWidth, bh = preview.clientHeight;
+    const dot = document.getElementById('ga-focus-dot');
+    if (nw && nh && bw && bh) {
+      const s = Math.max(bw / nw, bh / nh);
+      const ox = (bw - nw * s) * focus.x / 100, oy = (bh - nh * s) * focus.y / 100;
+      dot.style.left = (ox + nw * s * focus.x / 100) + 'px';
+      dot.style.top = (oy + nh * s * focus.y / 100) + 'px';
+    }
+  };
+  if (preview) {
+    document.getElementById('ga-focus-img').addEventListener('load', sync);
+    modal.querySelectorAll('input[name="ga-cover"]').forEach(r => r.addEventListener('change', () => { coverId = r.value; sync(); }));
+    document.getElementById('ga-fx').addEventListener('input', e => { focus.x = +e.target.value; sync(); });
+    document.getElementById('ga-fy').addEventListener('input', e => { focus.y = +e.target.value; sync(); });
+    preview.addEventListener('click', e => {
+      // Convert the click inside the cropped box back to a point on the full image
+      const img = document.getElementById('ga-focus-img');
+      const r = preview.getBoundingClientRect();
+      const nw = img.naturalWidth, nh = img.naturalHeight;
+      if (!nw) return;
+      const s = Math.max(r.width / nw, r.height / nh);
+      const ox = (r.width - nw * s) * focus.x / 100, oy = (r.height - nh * s) * focus.y / 100;
+      const px = (e.clientX - r.left - ox) / (nw * s), py = (e.clientY - r.top - oy) / (nh * s);
+      focus.x = Math.round(Math.min(1, Math.max(0, px)) * 100);
+      focus.y = Math.round(Math.min(1, Math.max(0, py)) * 100);
+      sync();
+    });
+    sync();
+  }
+
+  document.getElementById('ga-album-form').addEventListener('submit', e => {
+    e.preventDefault();
+    const title = document.getElementById('ga-a-title').value.trim();
+    if (!title) { toast('Album title is required', 'error'); return; }
+    const fields = {
+      title,
+      categoryId: document.getElementById('ga-a-cat').value,
+      description: document.getElementById('ga-a-desc').value.trim(),
+      location: document.getElementById('ga-a-loc').value.trim(),
+      date: document.getElementById('ga-a-date').value.trim()
+    };
+    close();
+    gaCommit((d, meta) => {
+      if (a) {
+        const alb = gaAlbum(meta, a.id);
+        Object.assign(alb, fields);
+        if (coverId) alb.coverId = coverId;
+        alb.focus = { x: focus.x, y: focus.y };
+      } else {
+        meta.albums.push(Object.assign({
+          id: gaUniqueId(title, meta.albums.map(x => x.id)),
+          coverId: '', focus: { x: 50, y: 50 }, photoIds: []
+        }, fields));
+      }
+    }, a ? 'Album saved' : 'Album created');
+  });
+}
+
+/* ---- Categories: add, rename, reorder, delete ---- */
+function gaCategoriesModal() {
+  const view = gaView();
+  let cats = view.categories.map(c => ({ ...c, used: view.albums.filter(a => a.categoryId === c.id).length }));
+  const modal = document.createElement('div');
+  modal.className = 'adm-modal-overlay open';
+  modal.style.zIndex = '9999';
+  document.body.appendChild(modal);
+  const close = () => modal.remove();
+  const draw = () => {
+    modal.innerHTML = `
+      <div class="adm-modal" role="dialog" aria-modal="true" aria-labelledby="ga-cm-title">
+        <div class="adm-modal-header"><h3 id="ga-cm-title">Categories</h3><button type="button" class="adm-modal-close" data-close aria-label="Close">✕</button></div>
+        <div class="adm-modal-body">
+          <p class="ga-muted" style="margin-bottom:1rem">Categories group albums on the website. Only categories with photos are shown to visitors. Deleting a category keeps its albums (they show under All only).</p>
+          ${cats.map((c, i) => `
+            <div class="ga-cat-row">
+              <input aria-label="Category name" data-i="${i}" value="${esc(c.name)}">
+              <span class="ga-muted">${c.used} album${c.used === 1 ? '' : 's'}</span>
+              <button type="button" class="adm-btn adm-btn-secondary ga-icon-btn" data-up="${i}" ${i === 0 ? 'disabled' : ''} aria-label="Move up">↑</button>
+              <button type="button" class="adm-btn adm-btn-secondary ga-icon-btn" data-down="${i}" ${i === cats.length - 1 ? 'disabled' : ''} aria-label="Move down">↓</button>
+              <button type="button" class="adm-btn adm-btn-danger ga-icon-btn" data-del="${i}" aria-label="Delete category">✕</button>
+            </div>`).join('')}
+          <div class="ga-cat-row">
+            <input id="ga-new-cat" placeholder="New category name">
+            <button type="button" class="adm-btn adm-btn-secondary" data-add>Add</button>
+          </div>
+          <div style="display:flex;gap:.75rem;justify-content:flex-end;margin-top:1.25rem">
+            <button type="button" class="adm-btn adm-btn-secondary" data-close>Cancel</button>
+            <button type="button" class="adm-btn adm-btn-primary" data-save>Save categories</button>
+          </div>
+        </div>
+      </div>`;
+    modal.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', close));
+    modal.querySelectorAll('input[data-i]').forEach(inp => inp.addEventListener('input', () => { cats[+inp.dataset.i].name = inp.value; }));
+    modal.querySelectorAll('[data-up]').forEach(b => b.addEventListener('click', () => { const i = +b.dataset.up; [cats[i - 1], cats[i]] = [cats[i], cats[i - 1]]; draw(); }));
+    modal.querySelectorAll('[data-down]').forEach(b => b.addEventListener('click', () => { const i = +b.dataset.down; [cats[i + 1], cats[i]] = [cats[i], cats[i + 1]]; draw(); }));
+    modal.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', () => { cats.splice(+b.dataset.del, 1); draw(); }));
+    modal.querySelector('[data-add]').addEventListener('click', () => {
+      const name = document.getElementById('ga-new-cat').value.trim();
+      if (!name) return;
+      cats.push({ id: '', name, used: 0 });
+      draw();
+    });
+    modal.querySelector('[data-save]').addEventListener('click', () => {
+      if (cats.some(c => !c.name.trim())) { toast('Category names cannot be empty', 'error'); return; }
+      close();
+      gaCommit((d, meta) => {
+        const taken = [];
+        meta.categories = cats.map(c => {
+          const id = c.id || gaUniqueId(c.name, taken.concat(meta.categories.map(x => x.id)));
+          taken.push(id);
+          return { id, name: c.name.trim() };
+        });
+        const ids = meta.categories.map(c => c.id);
+        meta.albums.forEach(a => { if (!ids.includes(a.categoryId)) a.categoryId = ''; });
+      }, 'Categories saved');
+    });
+  };
+  modal.addEventListener('click', e => { if (e.target === modal) close(); });
+  modal.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
+  draw();
+}
+
+/* ---- Photo editor: original fields stay as stored; display labels are separate ---- */
+function gaPhotoModal(id) {
+  const view = gaView();
+  const p = view.byId[id];
+  const alb = gaAlbumOf(view, id);
+  const modal = document.createElement('div');
+  modal.className = 'adm-modal-overlay open';
+  modal.style.zIndex = '9999';
+  modal.innerHTML = `
+    <div class="adm-modal ga-modal-wide" role="dialog" aria-modal="true" aria-labelledby="ga-pm-title">
+      <div class="adm-modal-header"><h3 id="ga-pm-title">Edit photo</h3><button type="button" class="adm-modal-close" data-close aria-label="Close">✕</button></div>
+      <form class="adm-modal-body" id="ga-photo-form">
+        <div class="ga-photo-edit">
+          <img src="${esc(Gallery.sized(p, 640))}" alt="">
+          <div>
+            <div class="adm-form-group"><label for="ga-p-album">Album</label><select id="ga-p-album">${gaAlbumOptions(view, alb ? alb.id : '')}</select></div>
+            <label class="ga-check"><input type="checkbox" id="ga-p-review" ${view.review.has(id) ? 'checked' : ''}> Needs classification review</label>
+            <p class="ga-muted" style="margin-top:.75rem;word-break:break-all">${esc(p.src)}</p>
+          </div>
+        </div>
+        <fieldset class="ga-fieldset">
+          <legend>Original (as uploaded)</legend>
+          <div class="adm-form-group"><label for="ga-p-title">Title</label><input id="ga-p-title" value="${esc(p.title || p.caption || '')}"></div>
+          <div class="adm-form-group"><label for="ga-p-desc">Description</label><textarea id="ga-p-desc" rows="3">${esc(p.description || '')}</textarea></div>
+        </fieldset>
+        <fieldset class="ga-fieldset">
+          <legend>Display labels (optional — override the original on the website)</legend>
+          <div class="adm-form-group"><label for="ga-p-dtitle">Display title</label><input id="ga-p-dtitle" value="${esc(p.displayTitle || '')}" placeholder="${esc(p.title || '')}"></div>
+          <div class="adm-form-group"><label for="ga-p-dcap">Display caption</label><textarea id="ga-p-dcap" rows="2" placeholder="${esc(p.description || '')}">${esc(p.displayCaption || '')}</textarea></div>
+          <div class="adm-form-group"><label for="ga-p-alt">Alt text for screen readers</label><input id="ga-p-alt" value="${esc(p.alt || '')}" placeholder="${esc(Gallery.alt(Object.assign({}, p, { alt: '' })))}"></div>
+          <div class="adm-form-row">
+            <div class="adm-form-group"><label for="ga-p-loc">Location (only if known)</label><input id="ga-p-loc" value="${esc(p.location || '')}"></div>
+            <div class="adm-form-group"><label for="ga-p-date">Date (only if known)</label><input id="ga-p-date" value="${esc(p.date || '')}"></div>
+          </div>
+        </fieldset>
+        <div style="display:flex;gap:.75rem;justify-content:flex-end;margin-top:1rem">
+          <button type="button" class="adm-btn adm-btn-secondary" data-close>Cancel</button>
+          <button type="submit" class="adm-btn adm-btn-primary">Save photo</button>
+        </div>
+      </form>
+    </div>`;
+  document.body.appendChild(modal);
+  const close = () => modal.remove();
+  modal.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', close));
+  modal.addEventListener('click', e => { if (e.target === modal) close(); });
+  modal.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
+  document.getElementById('ga-p-album').focus();
+
+  document.getElementById('ga-photo-form').addEventListener('submit', e => {
+    e.preventDefault();
+    const v = k => document.getElementById(k).value.trim();
+    const target = document.getElementById('ga-p-album').value;
+    const review = document.getElementById('ga-p-review').checked;
+    const vals = {
+      title: v('ga-p-title'), description: v('ga-p-desc'),
+      displayTitle: v('ga-p-dtitle'), displayCaption: v('ga-p-dcap'), alt: v('ga-p-alt'),
+      location: v('ga-p-loc'), date: v('ga-p-date')
+    };
+    close();
+    gaCommit((d, meta) => {
+      const rec = gaRec(d, id);
+      // Original fields are only written when actually edited
+      if (vals.title !== (rec.title || rec.caption || '')) rec.title = vals.title;
+      if (vals.description !== (rec.description || '')) rec.description = vals.description;
+      ['displayTitle', 'displayCaption', 'alt', 'location', 'date'].forEach(k => {
+        if (vals[k]) rec[k] = vals[k]; else delete rec[k];
+      });
+      const current = meta.albums.find(a => a.photoIds.includes(id));
+      if ((current ? current.id : '') !== target) {
+        gaRemoveFromAlbums(meta, [id]);
+        const alb = target && gaAlbum(meta, target);
+        if (alb) { alb.photoIds.push(id); if (!alb.coverId) alb.coverId = id; }
+      }
+      meta.review = meta.review.filter(r => r !== id);
+      if (review) meta.review.push(id);
+    }, 'Photo saved');
+  });
 }
 
 function promptGalleryInfo(filename, existingTitle = '', existingDesc = '') {
@@ -1045,11 +1554,11 @@ function promptGalleryInfo(filename, existingTitle = '', existingDesc = '') {
         </div>
         <div class="adm-modal-body">
           <p style="color:var(--text3);font-size:.82rem;margin-bottom:1rem;word-break:break-all">${esc(filename)}</p>
-          <div class="form-group">
+          <div class="adm-form-group">
             <label>Title</label>
             <input type="text" id="ginfo-title" value="${esc(existingTitle)}" placeholder="যেমন: ব্যবসার মিটিং, প্রজেক্ট শো...">
           </div>
-          <div class="form-group">
+          <div class="adm-form-group">
             <label>Description</label>
             <textarea id="ginfo-desc" rows="3" placeholder="Image সম্পর্কে বিস্তারিত লিখুন (optional)">${esc(existingDesc)}</textarea>
           </div>
@@ -1072,40 +1581,58 @@ function promptGalleryInfo(filename, existingTitle = '', existingDesc = '') {
   });
 }
 
-async function handleGalleryFiles(files) {
+async function handleGalleryFiles(files, albumId = '') {
   const filesArr = Array.from(files);
-  const d = DB.get();
-  let uploaded = 0;
+  const added = [];
   toast(`${filesArr.length}টি image upload হচ্ছে...`, 'info');
   for (const file of filesArr) {
-    const url = await uploadToImgBB(file);
-    if (url) {
+    const data = await uploadToImgBBData(file);
+    if (data && data.url) {
       const { title, description } = await promptGalleryInfo(file.name);
-      d.gallery.push({ src: url, title, description });
-      uploaded++;
+      const rec = { id: Gallery.newId('p'), src: data.url, title, description };
+      if (+data.width > 0 && +data.height > 0) { rec.w = +data.width; rec.h = +data.height; }
+      if (data.medium && data.medium.url) rec.medium = data.medium.url;
+      added.push(rec);
     }
   }
-  if (uploaded > 0) {
+  if (!added.length) return;
+  const save = () => {
+    const d = DB.get();
+    if (!Array.isArray(d.gallery)) d.gallery = [];
+    d.gallery.push(...added);
+    if (albumId || Gallery.hasMeta(d)) {
+      Gallery.migrate(d);
+      const alb = albumId && gaAlbum(d.galleryMeta, albumId);
+      if (alb) {
+        added.forEach(r => alb.photoIds.push(r.id));
+        if (!alb.coverId) alb.coverId = added[0].id;
+      }
+    }
     DB.save(d);
-    toast(`${uploaded}টি image uploaded!`);
+    toast(`${added.length}টি image uploaded!`);
     renderGalleryTab(document.getElementById('adm-content'));
-  }
+  };
+  // Uploading into an album is a structural save: same backup-first rule
+  if (albumId && !Gallery.hasMeta(DB.get())) {
+    confirm('Uploading into an album saves the album structure for the first time. A backup of your current data will download first.',
+      () => { gaDownloadBackup('before-gallery-albums'); save(); },
+      { title: 'Save album structure', icon: '🗂️', okLabel: 'Download backup & save', okClass: 'adm-btn-primary' });
+  } else save();
 }
 
-window.editGalleryItem = async function(index) {
-  const d = DB.get();
-  const img = d.gallery[index];
-  const { title, description } = await promptGalleryInfo(img.src.split('/').pop(), img.title || img.caption || '', img.description || '');
-  d.gallery[index] = { ...img, title, description };
-  DB.save(d);
-  toast('Updated!');
-  renderGalleryTab(document.getElementById('adm-content'));
-};
+window.editGalleryItem = function(id) { gaPhotoModal(id); };
 
-window.deleteGalleryItem = function(index) {
-  confirm('Delete this image?', () => {
+window.deleteGalleryItem = function(id) {
+  confirm('Delete this image? It is removed from the gallery permanently.', () => {
     const d = DB.get();
-    d.gallery.splice(index, 1);
+    const p = Gallery.build(d).byId[id];
+    if (!p) return;
+    d.gallery.splice(p.index, 1);
+    if (Gallery.hasMeta(d)) {
+      gaRemoveFromAlbums(d.galleryMeta, [id]);
+      d.galleryMeta.review = (d.galleryMeta.review || []).filter(r => r !== id);
+    }
+    GA.selected.delete(id);
     DB.save(d);
     toast('Deleted');
     renderGalleryTab(document.getElementById('adm-content'));
@@ -1387,6 +1914,12 @@ window.resetData = function() {
    IMAGE HOSTING (ImgBB)
    ============================================================ */
 async function uploadToImgBB(file) {
+  const data = await uploadToImgBBData(file);
+  return data ? data.url : null;
+}
+
+/* Full ImgBB response (url plus width/height and the resized "medium" copy) */
+async function uploadToImgBBData(file) {
   const apiKey = DB.getImgBBKey();
   if (!apiKey) {
     toast('ImgBB API key নেই! Settings > Image Hosting-এ key দিন।', 'error');
@@ -1398,7 +1931,7 @@ async function uploadToImgBB(file) {
   try {
     const res  = await fetch('https://api.imgbb.com/1/upload', { method: 'POST', body: formData });
     const json = await res.json();
-    if (json.success) return json.data.url;
+    if (json.success) return json.data;
     toast('Upload failed: ' + (json.error?.message || 'Unknown error'), 'error');
     return null;
   } catch {
@@ -1477,13 +2010,17 @@ function initConfirmDialog() {
   document.getElementById('confirm-cancel')?.addEventListener('click', () => overlay.classList.remove('open'));
 }
 
-function confirm(text, onOk) {
+function confirm(text, onOk, opts = {}) {
   const overlay = document.getElementById('confirm-overlay');
   if (!overlay) { if (window.confirm(text)) onOk(); return; }
   document.getElementById('confirm-text').textContent = text;
+  document.getElementById('confirm-title').textContent = opts.title || 'Are you sure?';
+  overlay.querySelector('.confirm-icon').textContent = opts.icon || '⚠️';
   overlay.classList.add('open');
   const okBtn = document.getElementById('confirm-ok');
   const newOk = okBtn.cloneNode(true);
+  newOk.textContent = opts.okLabel || 'Delete';
+  newOk.className = 'adm-btn ' + (opts.okClass || 'adm-btn-danger');
   okBtn.replaceWith(newOk);
   newOk.addEventListener('click', () => { overlay.classList.remove('open'); onOk(); }, { once: true });
 }

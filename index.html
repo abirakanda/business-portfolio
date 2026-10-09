@@ -16,7 +16,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Inter+Tight:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 
-  <link rel="stylesheet" href="css/style.css?v=3">
+  <link rel="stylesheet" href="css/style.css?v=5">
 </head>
 <body>
 
@@ -244,13 +244,7 @@
         <h2 class="section-title">My <span class="gradient-text">Skills</span></h2>
         <p class="section-desc">Constantly learning and mastering new technologies</p>
       </div>
-      <div class="skills-container">
-        <div class="skills-bars" id="skills-bars"><!-- dynamic --></div>
-        <div class="tech-stack reveal">
-          <h3>Technologies &amp; Tools</h3>
-          <div class="tech-grid" id="tech-grid"><!-- dynamic --></div>
-        </div>
-      </div>
+      <div class="skills-showcase" id="skills-showcase"><!-- dynamic: category cards --></div>
     </div>
   </section>
 
@@ -369,25 +363,44 @@
     <span class="section-number">07</span>
     <div class="container">
       <div class="section-header reveal">
-        <span class="section-tag">Visual Story</span>
+        <span class="section-tag">Visual Journal</span>
         <h2 class="section-title">My <span class="gradient-text">Gallery</span></h2>
-        <p class="section-desc">Moments, milestones, and memories captured in frames</p>
+        <p class="section-desc">Travels, events, and milestones — gathered into albums.</p>
       </div>
-      <div class="gallery-grid" id="gallery-grid"><!-- dynamic --></div>
+      <div class="gallery-app" id="gallery-app" aria-live="polite">
+        <div class="gallery-empty">Loading gallery…</div>
+      </div>
     </div>
   </section>
 
   <!-- Lightbox -->
-  <div class="lightbox" id="lightbox">
-    <button type="button" class="lightbox-close" id="lightbox-close" aria-label="Close image">✕</button>
-    <button type="button" class="lightbox-prev"  id="lightbox-prev" aria-label="Previous image">‹</button>
-    <button type="button" class="lightbox-next"  id="lightbox-next" aria-label="Next image">›</button>
-    <div class="lightbox-content">
-      <img id="lightbox-img" src="" alt="Gallery Image">
-      <div class="lightbox-info">
-        <h3 id="lightbox-title"></h3>
-        <p  id="lightbox-caption"></p>
+  <div class="lightbox" id="lightbox" role="dialog" aria-modal="true" aria-labelledby="lb-title" hidden>
+    <div class="lb-bar">
+      <p class="lb-counter" id="lb-counter" aria-live="polite"></p>
+      <div class="lb-tools">
+        <button type="button" class="lb-btn" id="lb-zoom" aria-label="Zoom in" aria-pressed="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3M11 8v6M8 11h6" class="lb-zoom-plus"/></svg>
+        </button>
+        <button type="button" class="lb-btn" id="lb-close" aria-label="Close viewer">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
       </div>
+    </div>
+    <div class="lb-stage" id="lb-stage">
+      <img class="lb-img" id="lb-img" alt="" draggable="false">
+      <div class="lb-status" id="lb-status" role="status"></div>
+    </div>
+    <button type="button" class="lb-btn lb-nav lb-prev" id="lb-prev" aria-label="Previous photo">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>
+    </button>
+    <button type="button" class="lb-btn lb-nav lb-next" id="lb-next" aria-label="Next photo">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>
+    </button>
+    <div class="lb-info" id="lb-info">
+      <h3 class="lb-title" id="lb-title"></h3>
+      <p class="lb-caption" id="lb-caption"></p>
+      <p class="lb-meta" id="lb-meta"></p>
+      <button type="button" class="lb-more" id="lb-more" aria-expanded="false" hidden>Show full caption</button>
     </div>
   </div>
 
@@ -511,7 +524,8 @@
   </div>
 
   <!-- Scripts -->
-  <script src="js/data.js?v=4"></script>
-  <script src="js/main.js?v=6"></script>
+  <script src="js/data.js?v=6"></script>
+  <script src="js/tech-icons.js?v=1"></script>
+  <script src="js/main.js?v=8"></script>
 </body>
 </html>
