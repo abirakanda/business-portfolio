@@ -5,13 +5,18 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="Professional portfolio of a CIS student at Daffodil International University — Web Developer & Export-Import Business Owner.">
   <title>Portfolio — CIS Student & Web Developer</title>
+  <meta name="theme-color" content="#050505">
+  <meta name="color-scheme" content="dark">
+
+  <!-- Reveal animations only hide content once JS is known to be running -->
+  <script>document.documentElement.classList.add('js');</script>
 
   <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800;900&family=Inter:wght@300;400;500;600&family=Space+Grotesk:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Inter+Tight:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 
-  <link rel="stylesheet" href="css/style.css?v=2">
+  <link rel="stylesheet" href="css/style.css?v=3">
 </head>
 <body>
 
@@ -60,11 +65,10 @@
        HERO SECTION
        ============================================================ -->
   <section id="home" class="hero">
-    <canvas id="particles-canvas"></canvas>
-    <div class="aurora">
-      <div class="aurora-1"></div>
-      <div class="aurora-2"></div>
-      <div class="aurora-3"></div>
+    <!-- Decorative wireframe landscape (canvas), with a static CSS fallback -->
+    <div class="hero-scene" aria-hidden="true">
+      <div class="terrain-fallback"></div>
+      <canvas id="terrain-canvas"></canvas>
     </div>
 
     <div class="hero-content">
@@ -113,6 +117,9 @@
         </div>
       </div>
     </div>
+
+    <!-- Reserves the lower band of the hero for the landscape so text never sits on the light -->
+    <div class="hero-horizon" id="hero-horizon"></div>
 
     <div class="hero-scroll">
       <div class="scroll-indicator">
@@ -258,6 +265,40 @@
         <h2 class="section-title">Featured <span class="gradient-text">Projects</span></h2>
         <p class="section-desc">A selection of work that showcases my skills and creativity</p>
       </div>
+
+      <!-- Signature 3D showcase: a portfolio book that opens into preview panels of the real projects below -->
+      <div class="showcase" id="showcase" hidden>
+        <div class="showcase-stage" id="showcase-stage">
+          <div class="showcase-scene" id="showcase-scene">
+            <div class="showcase-light" aria-hidden="true"></div>
+            <div class="book" aria-hidden="true">
+              <div class="book-face book-back"></div>
+              <div class="book-face book-edge book-edge-right"></div>
+              <div class="book-face book-edge book-edge-bottom"></div>
+              <div class="book-face book-edge book-edge-top"></div>
+              <div class="book-face book-spine"><span id="book-spine-name"></span></div>
+              <div class="book-face book-page">
+                <span class="book-page-label">Selected Work</span>
+                <ol class="book-toc" id="book-toc"></ol>
+              </div>
+              <div class="book-cover">
+                <div class="book-cover-front">
+                  <span class="book-mono" id="book-mono"></span>
+                  <span class="book-kicker">Portfolio</span>
+                  <span class="book-name" id="book-name"></span>
+                  <span class="book-role" id="book-role"></span>
+                </div>
+                <div class="book-cover-inside"></div>
+              </div>
+            </div>
+            <ul class="showcase-panels" id="showcase-panels" aria-label="Project previews"></ul>
+          </div>
+        </div>
+        <button type="button" class="showcase-toggle" id="showcase-toggle">
+          <span class="showcase-toggle-label">Open portfolio</span>
+        </button>
+      </div>
+
       <div class="projects-filter" id="projects-filter">
         <button class="filter-btn active" data-filter="all">All</button>
       </div>
@@ -338,9 +379,9 @@
 
   <!-- Lightbox -->
   <div class="lightbox" id="lightbox">
-    <button class="lightbox-close" id="lightbox-close">✕</button>
-    <button class="lightbox-prev"  id="lightbox-prev">‹</button>
-    <button class="lightbox-next"  id="lightbox-next">›</button>
+    <button type="button" class="lightbox-close" id="lightbox-close" aria-label="Close image">✕</button>
+    <button type="button" class="lightbox-prev"  id="lightbox-prev" aria-label="Previous image">‹</button>
+    <button type="button" class="lightbox-next"  id="lightbox-next" aria-label="Next image">›</button>
     <div class="lightbox-content">
       <img id="lightbox-img" src="" alt="Gallery Image">
       <div class="lightbox-info">
@@ -471,6 +512,6 @@
 
   <!-- Scripts -->
   <script src="js/data.js?v=4"></script>
-  <script src="js/main.js?v=5"></script>
+  <script src="js/main.js?v=6"></script>
 </body>
 </html>

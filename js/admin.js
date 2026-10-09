@@ -121,7 +121,7 @@ function renderDashboard(el) {
     <div class="dash-stats">
       <div class="dash-stat-card">
         <div class="dash-stat-icon" style="background:rgba(124,58,237,.12)">
-          <svg viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="#E4CB93" stroke-width="2"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>
         </div>
         <div>
           <div class="dash-stat-num">${d.education.length}</div>

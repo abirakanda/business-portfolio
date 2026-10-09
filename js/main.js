@@ -9,11 +9,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   initNav();
   initNavDots();
 
+  initTerrain();
+
   const remoteData = await DB.fetchRemote();
   const data = remoteData || DB.get();
 
   renderAll(data);
-  initParticles();
+  hidePreloader();
+  initShowcase();
   initTypewriter();
   initScrollReveal();
   initCounters();
@@ -31,6 +34,7 @@ function renderAll(d) {
   renderEducation(d.education);
   renderSkills(d.skills, d.technologies);
   renderProjects(d.projects);
+  renderShowcase(d.profile, d.projects);
   renderBusiness(d.business);
   renderResume(d.experience, d.achievements, d.profile);
   renderGallery(d.gallery);
@@ -141,7 +145,7 @@ function renderProjectCards(projects, grid) {
     return;
   }
   grid.innerHTML = projects.map(p => `
-    <div class="project-card reveal" data-category="${p.category}">
+    <div class="project-card reveal" id="project-${p.id}" tabindex="-1" data-category="${p.category}">
       <div class="project-img">
         ${p.image
           ? `<img src="${p.image}" alt="${p.title}">`
@@ -156,7 +160,7 @@ function renderProjectCards(projects, grid) {
         <div class="project-cat">${p.category}</div>
         <h3 class="project-title">${p.title}</h3>
         <p class="project-desc">${p.description}</p>
-        <div class="project-tags">${p.tags.map(t => `<span class="project-tag">${t}</span>`).join('')}</div>
+        <div class="project-tags">${(p.tags || []).map(t => `<span class="project-tag">${t}</span>`).join('')}</div>
       </div>
     </div>
   `).join('');
@@ -301,12 +305,13 @@ function renderSocialLinks(containerId, social, footer = false) {
    ============================================================ */
 
 function initPreloader() {
-  window.addEventListener('load', () => {
-    setTimeout(() => {
-      const loader = document.getElementById('preloader');
-      if (loader) loader.classList.add('hidden');
-    }, 600);
-  });
+  // Whichever comes first: content rendered (hidePreloader) or the page fully loaded
+  window.addEventListener('load', hidePreloader);
+}
+
+function hidePreloader() {
+  const loader = document.getElementById('preloader');
+  if (loader) loader.classList.add('hidden');
 }
 
 function initCursor() {
@@ -501,56 +506,326 @@ function updateNavDots(current) {
   });
 }
 
-/* ---- Particles ---- */
-function initParticles() {
-  const canvas = document.getElementById('particles-canvas');
-  if (!canvas) return;
+/* ---- Hero wireframe landscape ----
+   A procedural 2D-canvas terrain: contour rows drawn far → near, each one filling
+   the area beneath it so nearer ridges hide what is behind them. Warm light sits on
+   the centre horizon, which is placed below the hero text (#hero-horizon). */
+function initTerrain() {
+  const hero    = document.getElementById('home');
+  const canvas  = document.getElementById('terrain-canvas');
+  const horizon = document.getElementById('hero-horizon');
+  if (!hero || !canvas || !canvas.getContext) return;
   const ctx = canvas.getContext('2d');
-  let W, H, particles;
+  if (!ctx) return;
+
+  const reduceMQ = window.matchMedia('(prefers-reduced-motion: reduce)');
+  const Z_NEAR = 1.1, Z_FAR = 24, CAM_Y = 1.6, SPEED = 0.2, SPREAD = 1.15;
+  let W = 0, H = 0, hY = 0, fx = 0, fy = 0, cols = 0, rows = 0;
+  let raf = 0, last = 0, travel = 0, onScreen = true, fill = null, amp = 0.32;
+  let bufA = null, bufB = null;
+
+  function height(u, z, zw) {
+    const sides = Math.pow(Math.abs(u), 1.7);
+    const wave  = Math.sin(u * 3.1 + zw * 0.35) * 0.5
+                + Math.sin(u * 7.3 - zw * 0.21 + 1.7) * 0.22
+                + Math.sin(zw * 0.6 + u * 1.3) * 0.18;
+    const ridge = sides * (1.15 + 0.35 * wave) + (1 - sides) * 0.07 * wave;
+    return ridge * amp * z;
+  }
 
   function resize() {
-    W = canvas.width  = canvas.offsetWidth;
-    H = canvas.height = canvas.offsetHeight;
+    const r = canvas.getBoundingClientRect();
+    if (!r.width || !r.height) return;
+    W = r.width; H = r.height;
+    const small = W < 720;
+    const dpr = Math.min(window.devicePixelRatio || 1, small ? 1.25 : 1.75);
+    cols = small ? 64 : 112;
+    rows = small ? 30 : 44;
+    canvas.width  = Math.round(W * dpr);
+    canvas.height = Math.round(H * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    hY = horizon ? horizon.offsetTop + Math.min(64, horizon.offsetHeight * 0.2) : H * 0.66;
+    // Gentler ridges on tall, narrow screens so they stay clear of the text
+    amp = 0.32 * Math.max(0.5, Math.min(1, (W / H) * 1.1));
+    fx = W * 0.5;
+    fy = Math.max(H - hY, 120) * Z_NEAR / CAM_Y * 1.25;
+    fill = ctx.createLinearGradient(0, hY - 40, 0, H);
+    fill.addColorStop(0, '#0b0a08');
+    fill.addColorStop(0.35, '#070707');
+    fill.addColorStop(1, '#050505');
+    bufA = new Float32Array((cols + 1) * 2);
+    bufB = new Float32Array((cols + 1) * 2);
+    draw();
+    hero.classList.add('terrain-live');
   }
-  resize();
-  window.addEventListener('resize', resize, { passive: true });
 
-  const COUNT = 70;
-  particles = Array.from({ length: COUNT }, () => ({
-    x: Math.random() * W, y: Math.random() * H,
-    vx: (Math.random() - .5) * .4, vy: (Math.random() - .5) * .4,
-    r: Math.random() * 2 + 1,
-    o: Math.random() * .5 + .1
-  }));
+  function rowGradient(alphaSide, alphaMid, alphaCore) {
+    const g = ctx.createLinearGradient(0, 0, W, 0);
+    g.addColorStop(0,    `rgba(150,150,156,${alphaSide})`);
+    g.addColorStop(0.3,  `rgba(197,166,101,${alphaMid})`);
+    g.addColorStop(0.5,  `rgba(240,212,152,${alphaCore})`);
+    g.addColorStop(0.7,  `rgba(197,166,101,${alphaMid})`);
+    g.addColorStop(1,    `rgba(150,150,156,${alphaSide})`);
+    return g;
+  }
 
   function draw() {
+    if (!W) return;
     ctx.clearRect(0, 0, W, H);
-    particles.forEach((p, i) => {
-      p.x += p.vx; p.y += p.vy;
-      if (p.x < 0 || p.x > W) p.vx *= -1;
-      if (p.y < 0 || p.y > H) p.vy *= -1;
 
+    // Light emerging from the centre horizon (an ellipse, wider than tall)
+    ctx.save();
+    ctx.translate(W / 2, hY);
+    ctx.scale(1, 0.42);
+    const R = Math.max(W * 0.46, 300);
+    const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, R);
+    glow.addColorStop(0,    'rgba(244,214,156,.55)');
+    glow.addColorStop(0.12, 'rgba(214,180,112,.26)');
+    glow.addColorStop(0.42, 'rgba(197,166,101,.07)');
+    glow.addColorStop(1,    'rgba(197,166,101,0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(-R, -R, R * 2, R * 2);
+    ctx.restore();
+
+    // Thin horizon line
+    const hl = ctx.createLinearGradient(W * 0.15, 0, W * 0.85, 0);
+    hl.addColorStop(0, 'rgba(197,166,101,0)');
+    hl.addColorStop(0.5, 'rgba(246,222,170,.7)');
+    hl.addColorStop(1, 'rgba(197,166,101,0)');
+    ctx.fillStyle = hl;
+    ctx.fillRect(W * 0.15, hY - 0.5, W * 0.7, 1);
+
+    const span = Z_FAR - Z_NEAR;
+    const step = span / rows;
+    const frac = (travel / step) % 1;
+    const colStep = cols > 80 ? 7 : 5;
+    let prev = null, cur = bufA;
+
+    for (let j = rows; j >= 0; j--) {
+      const z    = Z_NEAR + (j + 1 - frac) * step;
+      const zw   = z + travel;
+      const farT = Math.min(1, (z - Z_NEAR) / span);
+      const fadeFar  = Math.max(0, Math.min(1, (1.02 - (z - Z_NEAR) / span) / 0.16));
+      const fadeNear = Math.min(1, (z - Z_NEAR) / (step * 1.5) + 0.3);
+      const alpha = fadeFar * fadeNear;
+
+      for (let i = 0; i <= cols; i++) {
+        const u = (i / cols) * 2 - 1;
+        const x = u * SPREAD * z;
+        const y = height(u, z, zw);
+        cur[i * 2]     = W / 2 + (x * fx) / z;
+        cur[i * 2 + 1] = hY + ((CAM_Y - y) * fy) / z;
+      }
+
+      // Hide whatever lies behind this ridge
       ctx.beginPath();
-      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(167,139,250,${p.o})`;
+      ctx.moveTo(cur[0], cur[1]);
+      for (let i = 1; i <= cols; i++) ctx.lineTo(cur[i * 2], cur[i * 2 + 1]);
+      ctx.lineTo(cur[cols * 2], H + 2);
+      ctx.lineTo(cur[0], H + 2);
+      ctx.closePath();
+      ctx.fillStyle = fill;
       ctx.fill();
 
-      for (let j = i + 1; j < particles.length; j++) {
-        const q = particles[j];
-        const dist = Math.hypot(p.x - q.x, p.y - q.y);
-        if (dist < 130) {
+      if (alpha > 0.01) {
+        const base = 0.1 + 0.18 * farT;
+        const stroke = rowGradient(base * 0.8, base * 1.5, 0.22 + 0.55 * farT);
+
+        // Longitudinal wires between this row and the one behind it
+        if (prev) {
           ctx.beginPath();
-          ctx.moveTo(p.x, p.y);
-          ctx.lineTo(q.x, q.y);
-          ctx.strokeStyle = `rgba(124,58,237,${.15 * (1 - dist / 130)})`;
-          ctx.lineWidth = .6;
+          for (let i = 0; i <= cols; i += colStep) {
+            ctx.moveTo(prev[i * 2], prev[i * 2 + 1]);
+            ctx.lineTo(cur[i * 2], cur[i * 2 + 1]);
+          }
+          ctx.globalAlpha = alpha * 0.45;
+          ctx.strokeStyle = stroke;
+          ctx.lineWidth = 0.6;
           ctx.stroke();
         }
+
+        ctx.beginPath();
+        ctx.moveTo(cur[0], cur[1]);
+        for (let i = 1; i <= cols; i++) ctx.lineTo(cur[i * 2], cur[i * 2 + 1]);
+        ctx.globalAlpha = alpha;
+        ctx.strokeStyle = stroke;
+        ctx.lineWidth = 0.6 + (1 - farT) * 0.6;
+        ctx.stroke();
+        ctx.globalAlpha = 1;
       }
-    });
-    requestAnimationFrame(draw);
+
+      prev = cur;
+      cur = cur === bufA ? bufB : bufA;
+    }
   }
-  draw();
+
+  function frame(now) {
+    raf = 0;
+    const dt = last ? Math.min(0.05, (now - last) / 1000) : 0;
+    last = now;
+    travel += dt * SPEED;
+    draw();
+    schedule();
+  }
+
+  function schedule() {
+    if (raf || !onScreen || document.hidden || reduceMQ.matches) return;
+    raf = requestAnimationFrame(frame);
+  }
+
+  function pause() {
+    if (raf) cancelAnimationFrame(raf);
+    raf = 0;
+    last = 0;
+  }
+
+  resize();
+  schedule();
+
+  window.addEventListener('resize', resize, { passive: true });
+  if ('ResizeObserver' in window) {
+    // Hero text renders after data loads, which moves the horizon band
+    const ro = new ResizeObserver(() => resize());
+    ro.observe(hero);
+    if (horizon) ro.observe(horizon);
+  }
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(resize);
+
+  if ('IntersectionObserver' in window) {
+    new IntersectionObserver(entries => {
+      onScreen = entries[0].isIntersecting;
+      if (onScreen) schedule(); else pause();
+    }).observe(hero);
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) pause(); else schedule();
+  });
+  const onMotionPref = () => { if (reduceMQ.matches) { pause(); draw(); } else schedule(); };
+  if (reduceMQ.addEventListener) reduceMQ.addEventListener('change', onMotionPref);
+  else if (reduceMQ.addListener) reduceMQ.addListener(onMotionPref);
+}
+
+/* ---- Signature showcase: portfolio book that opens into project preview panels ---- */
+const SHOWCASE_MAX = 6;
+
+function renderShowcase(profile, projects) {
+  const wrap = document.getElementById('showcase');
+  const list = document.getElementById('showcase-panels');
+  if (!wrap || !list) return;
+  const items = (projects || []).slice(0, SHOWCASE_MAX);
+  wrap.hidden = !items.length;
+  if (!items.length) { list.innerHTML = ''; return; }
+
+  const name = profile.name || '';
+  setText('book-name', name);
+  setText('book-spine-name', name);
+  setText('book-role', profile.title);
+  setText('book-mono', name.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase());
+
+  const toc = document.getElementById('book-toc');
+  if (toc) toc.innerHTML = items.map(p => `<li>${p.title}</li>`).join('');
+
+  list.innerHTML = items.map((p, i) => {
+    const external = p.demoUrl && p.demoUrl !== '#';
+    const href = external ? p.demoUrl : `#project-${p.id}`;
+    const tags = (p.tags || []).slice(0, 3);
+    return `
+      <li class="panel" style="--i:${i}">
+        <a class="panel-link" href="${href}"${external ? ' target="_blank" rel="noopener"' : ''}>
+          <span class="panel-chrome" aria-hidden="true"><i></i><i></i><i></i><span class="panel-url">${p.category || ''}</span></span>
+          <span class="panel-media">
+            ${p.image
+              ? `<img src="${p.image}" alt="" loading="lazy">`
+              : `<span class="panel-mock panel-mock-${i % 3}" aria-hidden="true">
+                  <span class="mock-nav"><i></i><i></i><i></i></span>
+                  <span class="mock-title">${p.title}</span>
+                  <span class="mock-lines"><i></i><i></i></span>
+                  <span class="mock-tags">${tags.map(t => `<i>${t}</i>`).join('')}</span>
+                </span>`}
+          </span>
+          <span class="panel-meta">
+            <span class="panel-cat">${p.category || ''}</span>
+            <span class="panel-title">${p.title}</span>
+            <span class="panel-cta">${external ? 'Live demo ↗' : 'View project →'}</span>
+          </span>
+        </a>
+      </li>`;
+  }).join('');
+  layoutShowcase();
+}
+
+// Positions are in a 1180px-wide design space; the stage scales it to fit (with a little side margin)
+function layoutShowcase() {
+  const stage = document.getElementById('showcase-stage');
+  const scene = document.getElementById('showcase-scene');
+  if (!stage || !scene) return;
+  const panels = Array.from(scene.querySelectorAll('.panel'));
+  const n = panels.length;
+  const twoRows = n > 3;
+  const perRow = twoRows ? Math.ceil(n / 2) : n;
+
+  panels.forEach((el, i) => {
+    const row  = twoRows && i >= perRow ? 1 : 0;
+    const col  = row ? i - perRow : i;
+    const cols = row ? n - perRow : perRow;
+    const mid  = (cols - 1) / 2;
+    const x = 200 + (col - mid) * 225 + (twoRows ? (row ? 50 : -50) : 0);
+    const y = twoRows ? (row ? 120 : -120) + (col - mid) * 20 : (col - mid) * 92;
+    const z = col * 90 + row * 60;
+    el.style.setProperty('--tx', `${x}px`);
+    el.style.setProperty('--ty', `${y}px`);
+    el.style.setProperty('--tz', `${z}px`);
+    el.style.setProperty('--d', `${380 + i * 90}ms`);
+  });
+
+  stage.style.setProperty('--s', Math.min(1, stage.clientWidth / 1260).toFixed(3));
+}
+
+function initShowcase() {
+  const wrap   = document.getElementById('showcase');
+  const toggle = document.getElementById('showcase-toggle');
+  const list   = document.getElementById('showcase-panels');
+  if (!wrap || !toggle || !list) return;
+  const label  = toggle.querySelector('.showcase-toggle-label');
+
+  let settleTimer = 0;
+  const setOpen = open => {
+    wrap.classList.toggle('is-open', open);
+    // Once the staggered entrance has played, drop the delays so hover feels immediate
+    clearTimeout(settleTimer);
+    wrap.classList.remove('is-settled');
+    if (open) settleTimer = setTimeout(() => wrap.classList.add('is-settled'), 1600);
+    if (label) label.textContent = open ? 'Close portfolio' : 'Open portfolio';
+  };
+  toggle.addEventListener('click', () => setOpen(!wrap.classList.contains('is-open')));
+
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reduce || !('IntersectionObserver' in window)) {
+    setOpen(true);
+  } else {
+    const io = new IntersectionObserver(entries => {
+      if (!entries[0].isIntersecting) return;
+      io.disconnect();
+      setTimeout(() => setOpen(true), 250);
+    }, { threshold: 0.35 });
+    io.observe(wrap);
+  }
+
+  // Panel → its full card in the grid below (clearing a filter that would hide it)
+  list.addEventListener('click', e => {
+    const a = e.target.closest('a[href^="#project-"]');
+    if (!a) return;
+    const card = document.getElementById(a.getAttribute('href').slice(1));
+    if (!card) return;
+    if (card.style.display === 'none') {
+      const all = document.querySelector('.filter-btn[data-filter="all"]');
+      if (all) all.click();
+    }
+    card.classList.add('visible');
+    setTimeout(() => card.focus({ preventScroll: true }), 700);
+  });
+
+  window.addEventListener('resize', layoutShowcase, { passive: true });
 }
 
 /* ---- Typewriter ---- */
