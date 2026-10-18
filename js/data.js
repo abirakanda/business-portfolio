@@ -50,33 +50,83 @@ const DEFAULT_DATA = {
   projects: [
     {
       id: "proj1",
-      title: "Personal Portfolio Website",
-      category: "Web Development",
-      description: "A fully responsive portfolio website with an integrated admin panel, built with pure HTML, CSS, and JavaScript. Features dynamic content management powered by localStorage.",
+      title: "Tender Document Package Builder",
+      category: "Web Apps",
+      description: "Bilingual (Bangla/English) web app built for AI DevFest 2026 that turns a stack of tender PDFs into one verified, correctly ordered submission package. Validates every file, detects duplicates via SHA-256 hashing, tracks document expiry, and generates a cover page, index and page-numbered footers — entirely in the browser, with no file ever uploaded.",
       image: "",
-      tags: ["HTML","CSS","JavaScript"],
-      demoUrl: "#",
-      codeUrl: "#"
+      tags: ["JavaScript","pdf-lib","PDF.js","i18n"],
+      demoUrl: "https://abirakanda.github.io/devfest-251-16-004/",
+      codeUrl: "https://github.com/abirakanda/devfest-251-16-004"
     },
     {
       id: "proj2",
-      title: "E-Commerce Platform",
-      category: "Web Development",
-      description: "A full-stack e-commerce solution with product management, a shopping cart system, user authentication, and payment gateway integration.",
+      title: "AI-Powered University Support System",
+      category: "Full-Stack",
+      description: "Three-tier support platform for students and staff: a Spring Boot REST API handles queries, service tickets and document generation; a Python FastAPI microservice uses Groq AI to answer, summarize and draft documents; and a React front end ties it together. Designed with a clean OOP architecture and deployable on Render.",
       image: "",
-      tags: ["PHP","MySQL","JavaScript"],
+      tags: ["Spring Boot","React","FastAPI","Groq AI"],
       demoUrl: "#",
-      codeUrl: "#"
+      codeUrl: "https://github.com/abirakanda/university-support-system"
     },
     {
       id: "proj3",
-      title: "Business Management System",
-      category: "Business",
-      description: "An inventory and trade management system designed for export-import operations. Tracks shipments, invoices, and client relationships.",
+      title: "E-Market — Multi-Vendor E-Commerce Platform",
+      category: "Full-Stack",
+      description: "Full-featured online marketplace with customer, seller and admin roles. Includes product catalog, cart and checkout, order and delivery-slot management, reviews, notifications, a grocery (bazar) module and a seller dashboard, secured with Spring Security and containerized with Docker.",
       image: "",
-      tags: ["PHP","MySQL","Bootstrap"],
-      demoUrl: "#",
+      tags: ["Java","Spring Boot","Thymeleaf","Docker"],
+      demoUrl: "https://e-market-orpin.vercel.app",
       codeUrl: "#"
+    },
+    {
+      id: "proj4",
+      title: "CryptoX — Crypto Exchange Interface",
+      category: "Web Apps",
+      description: "Front end for a cryptocurrency exchange covering the full user journey: sign-up and login, KYC verification, account dashboard, wallet, spot trading and peer-to-peer (P2P) trading screens, organized into modular auth, API and account scripts.",
+      image: "",
+      tags: ["HTML","CSS","JavaScript","Blockchain"],
+      demoUrl: "#",
+      codeUrl: "https://github.com/abirakanda/cryptox"
+    },
+    {
+      id: "proj5",
+      title: "BloggerFusion — Guest Post Network",
+      category: "Websites",
+      description: "SEO-optimized publishing site for a guest-posting and content-marketing brand. Features a blog with individual post pages, an admin area for content management, Open Graph and Twitter Card metadata, and complete legal pages (privacy, terms, disclaimer).",
+      image: "",
+      tags: ["HTML","CSS","JavaScript","SEO"],
+      demoUrl: "#",
+      codeUrl: "https://github.com/abirakanda/BloggerFusion.com"
+    },
+    {
+      id: "proj6",
+      title: "Personal Portfolio & CMS",
+      category: "Web Apps",
+      description: "This website: a black-and-gold portfolio with a 3D project showcase and curated photo gallery, managed through a custom admin panel. Content syncs in real time through Firebase, with images hosted on ImgBB — no framework, just hand-written HTML, CSS and JavaScript.",
+      image: "",
+      tags: ["JavaScript","Firebase","CSS3","Admin Panel"],
+      demoUrl: "#",
+      codeUrl: "https://github.com/abirakanda/business-portfolio"
+    },
+    {
+      id: "proj7",
+      title: "CIS Club Website",
+      category: "Websites",
+      description: "Responsive multi-page website for a university CIS club, with home, about, events, gallery, resources and contact pages, plus member sign-up and login, and notices and events that persist between visits.",
+      image: "",
+      tags: ["HTML","CSS","JavaScript"],
+      demoUrl: "#",
+      codeUrl: "https://github.com/abirakanda/Cis_Club_Website"
+    },
+    {
+      id: "proj8",
+      title: "OTP Verification Reseller Panel",
+      category: "Full-Stack",
+      description: "Node.js and Express backend with a lightweight web front end for reselling SMS verification numbers. Integrates the SMS-Man API to buy activation numbers and poll for incoming OTP codes in real time.",
+      image: "",
+      tags: ["Node.js","Express","REST API"],
+      demoUrl: "#",
+      codeUrl: "https://github.com/abirakanda/abir_otp"
     }
   ],
   business: {
